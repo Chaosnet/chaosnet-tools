@@ -125,20 +125,32 @@ ssize_t chaos_packet_recv(int fd, int *opcode, void *buffer)
 
 ssize_t chaos_packet_send(int fd, int opcode, const void *data, size_t len)
 {
+  const unsigned char *p;
   unsigned char buf[4];
   ssize_t n;
+  size_t m;
 
   buf[0] = opcode;
   buf[1] = 0;
   buf[2] = len & 0xFF;
   buf[3] = (len >> 8) & 0xFF;
-  n = send(fd, buf, sizeof buf, 0);
-  if (n <= 0)
-    return n;
-  if (len > 0) {
-    n = send(fd, data, len, 0);
+
+  p = buf;
+  for (m = sizeof buf; m > 0; m -= n) {
+    n = send(fd, p, m, 0);
     if (n <= 0)
       return n;
+    p += n;
+  }
+
+  p = data;
+  for (m = len; m > 0; m -= n) {
+    n = send(fd, p, m, 0);
+    if (n < 0)
+      return n;
+    if (n == 0)
+      return len - m;
+    p += n;
   }
 
   return len;

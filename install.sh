@@ -44,6 +44,14 @@ install_gw() {
     enable chaosnet-gateway
 }
 
+install_rtape() {
+    install -d "$BIN"
+    install -m 755 rtape "$BIN"
+    test -d "$SYSTEMD" || return
+    config chaosnet-rtape.service "$SYSTEMD" "ExecStart" "$BIN/rtape -v"
+    enable chaosnet-rtape
+}
+
 install_shutdown() {
     install -d "$BIN"
     install -m 755 shutdown "$BIN"
