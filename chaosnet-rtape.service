@@ -1,0 +1,16 @@
+[Unit]
+Description=Chaosnet RTAPE Server
+Requires=network-online.target
+After=network-online.target
+
+[Service]
+Type=exec
+User=its
+WorkingDirectory=/its/tapes
+ExecStart=/home/lars/src/chaosnet-tools/rtape -v
+Restart=always
+RestartSec=1
+StartLimitIntervalSec=0
+
+[Install]
+WantedBy=multi-user.target
