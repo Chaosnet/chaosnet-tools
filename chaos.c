@@ -87,3 +87,59 @@ int chaos_stream_rfc(int fd, const char *host, const char *contact)
 {
   return chaos_stream_rfc_data(fd, host, contact, NULL, 0);
 }
+
+int chaos_packets(void)
+{
+  return connect_to_named_socket(SOCK_STREAM, "chaos_packet");
+}
+
+ssize_t chaos_packet_recv(int fd, int *opcode, void *buffer)
+{
+  unsigned char *data;
+  ssize_t n, length;
+  int len;
+
+  data = buffer;
+  for (len = 4; len > 0; len -= n) {
+    n = recv(fd, data, len, 0);
+    if (n <= 0)
+      return n;
+    data += n;
+  }
+
+  data = buffer;
+  *opcode = data[0];
+  length = data[2] | ((int)data[3] << 8);
+
+  for (len = 0; len < length; len += n) {
+    n = recv(fd, data, length - len, 0);
+    if (n == 0)
+      return len;
+    if (n < 0)
+      return n;
+    data += n;
+  }
+
+  return len;
+}
+
+ssize_t chaos_packet_send(int fd, int opcode, const void *data, size_t len)
+{
+  unsigned char buf[4];
+  ssize_t n;
+
+  buf[0] = opcode;
+  buf[1] = 0;
+  buf[2] = len & 0xFF;
+  buf[3] = (len >> 8) & 0xFF;
+  n = send(fd, buf, sizeof buf, 0);
+  if (n <= 0)
+    return n;
+  if (len > 0) {
+    n = send(fd, data, len, 0);
+    if (n <= 0)
+      return n;
+  }
+
+  return len;
+}
