@@ -19,8 +19,14 @@
 #include <errno.h>
 #include <unistd.h>
 #include <sys/un.h>
+#include <netdb.h>
 #include <arpa/inet.h>
 #include "chaos.h"
+
+#define CHUDP_HEADER    4
+#define CHUDP_VERSION   1
+#define CHUDP_PKT       1
+#define CHAOS_HEADER   10
 
 static const char *chaos_socket_directory = "/tmp";
 
@@ -69,4 +75,76 @@ int chaos_rfc(int fd, const char *host, const char *contact)
   }
 
   return 0;
+}
+
+int chaos_udp(int lport, const char *peer, int rport)
+{
+  struct sockaddr_in sa;
+  struct addrinfo hints;
+  struct addrinfo *addr;
+  struct addrinfo *rp;
+  char str[10];
+  int reuse = 1;
+  int fd;
+
+  fd = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
+  if (fd < 0)
+    return -1;
+
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse) < 0)
+    goto error;
+
+  sa.sin_family = AF_INET;
+  sa.sin_port = htons(lport);
+  sa.sin_addr.s_addr = htonl(INADDR_ANY);
+  if (bind(fd, (struct sockaddr *)&sa, sizeof sa) < 0)
+    goto error;
+
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_DGRAM;
+
+  snprintf(str, sizeof str, "%d", rport);
+  if (getaddrinfo(peer, str, &hints, &addr) != 0)
+    goto error;
+
+  for (rp = addr; rp != NULL; rp = rp->ai_next) {
+    if (connect(fd, rp->ai_addr, rp->ai_addrlen) == 0) {
+      freeaddrinfo(addr);
+      return fd;
+    }
+  }
+
+error:
+  close(fd);
+  return -1;
+}
+
+ssize_t chaos_udp_send(int fd, int opcode, const void *data, size_t len)
+{
+  unsigned char header[CHUDP_HEADER + CHAOS_HEADER];
+  ssize_t n;
+
+  memset(header, 0, sizeof header);
+  header[0] = CHUDP_VERSION;
+  header[1] = CHUDP_PKT;
+  header[CHUDP_HEADER + 0] = opcode;
+  header[CHUDP_HEADER + 2] = len & 0xFF;
+  header[CHUDP_HEADER + 3] = (len >> 8) & 0xF;
+  n = send(fd, header, sizeof header, 0);
+
+  n = send(fd, data, len, 0);
+  return n;
+}
+
+ssize_t chaos_udp_recv(int fd, int *opcode, void *data)
+{
+  unsigned char packet[CHUDP_HEADER + CHAOS_HEADER + MAX_PACKET];
+  ssize_t n;
+
+  n = recv(fd, packet, sizeof packet, 0);
+  *opcode = packet[CHUDP_HEADER + 0];
+  n -= CHUDP_HEADER + CHAOS_HEADER;
+  memcpy(data, packet + CHUDP_HEADER + CHAOS_HEADER, n);
+  return n;
 }
