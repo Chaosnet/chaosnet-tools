@@ -47,12 +47,23 @@ int chaos_stream(void)
   return connect_to_named_socket(SOCK_STREAM, "chaos_stream");
 }
 
-int chaos_rfc(int fd, const char *host, const char *contact)
+int chaos_stream_rfc_data(int fd, const char *host, const char *contact,
+                          void *data, size_t len)
 {
   char buffer[500];
   ssize_t n;
 
-  if (dprintf(fd, "RFC %s %s\r\n", host, contact) < 0)
+  if (dprintf(fd, "RFC %s %s", host, contact) < 0)
+    return -1;
+
+  if (len > 0) {
+    char space = ' ';
+    if (write(fd, &space, 1) != 1)
+      return -1;
+    if (write(fd, data, len) != (ssize_t)len)
+      return -1;
+  }
+  if (dprintf(fd, "\r\n") < 0)
     return -1;
 
   n = read(fd, buffer, sizeof buffer);
@@ -69,4 +80,9 @@ int chaos_rfc(int fd, const char *host, const char *contact)
   }
 
   return 0;
+}
+
+int chaos_stream_rfc(int fd, const char *host, const char *contact)
+{
+  return chaos_stream_rfc_data(fd, host, contact, NULL, 0);
 }

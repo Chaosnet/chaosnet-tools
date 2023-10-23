@@ -103,7 +103,7 @@ static void incoming(void)
   if (c < 0)
     fatal("creating Chaosnet stream", errno);
 
-  if (chaos_rfc(c, host, contact) < 0)
+  if (chaos_stream_rfc(c, host, contact) < 0)
     fatal("error during request for connection", errno);
   fprintf(stderr, "Opened connection to %s contact %s\n", host, contact);
   forward(s, c);
