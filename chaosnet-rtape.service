@@ -10,7 +10,7 @@ User=its
 WorkingDirectory=/its/tapes
 ExecStart=/usr/local/bin/rtape -v
 Restart=always
-RestartSec=1
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
