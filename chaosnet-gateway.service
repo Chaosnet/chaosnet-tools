@@ -2,6 +2,7 @@
 Description=Chaosnet Gateway
 Requires=network-online.target
 After=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=exec
@@ -9,7 +10,6 @@ WorkingDirectory=/home/lars/src/chaosnet-tools
 ExecStart=/bin/sh ./gateway.sh
 Restart=always
 RestartSec=1
-StartLimitIntervalSec=0
 
 [Install]
 WantedBy=multi-user.target

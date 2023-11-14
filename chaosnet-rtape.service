@@ -2,6 +2,7 @@
 Description=Chaosnet RTAPE Server
 Requires=network-online.target
 After=network-online.target
+StartLimitIntervalSec=0
 
 [Service]
 Type=exec
@@ -10,7 +11,6 @@ WorkingDirectory=/its/tapes
 ExecStart=/usr/local/bin/rtape -v
 Restart=always
 RestartSec=1
-StartLimitIntervalSec=0
 
 [Install]
 WantedBy=multi-user.target
