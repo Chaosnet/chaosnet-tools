@@ -38,7 +38,7 @@ static int connect_to_named_socket(int type, char *path)
   slen = strlen(server.sun_path)+ 1 + sizeof(server.sun_family);
 
   if (connect(sock, (struct sockaddr *)&server, slen) < 0)
-    return 0;
+    return -1;
 
   return sock;
 }
