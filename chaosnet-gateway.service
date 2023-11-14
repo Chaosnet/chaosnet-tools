@@ -9,7 +9,7 @@ Type=exec
 WorkingDirectory=/home/lars/src/chaosnet-tools
 ExecStart=/bin/sh ./gateway.sh
 Restart=always
-RestartSec=1
+RestartSec=5
 
 [Install]
 WantedBy=multi-user.target
