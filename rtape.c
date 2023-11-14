@@ -631,6 +631,10 @@ static void serve(void)
   close(sock);
   *peer = 0;
   sock = chaos_packets();
+  if (sock < 0) {
+    fprintf(stderr, "Error connecting to Chaosnet packet NCP.\n");
+    exit(1);
+  }
   state = state_ignore;
   send_packet(CHOP_LSN, contact, strlen(contact));
 }  
