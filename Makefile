@@ -1,8 +1,11 @@
-ALL=gw rtape shutdown
+ALL=chatst gw rtape shutdown
 
 all: $(ALL)
 
 CFLAGS=-Wall -W -g
+
+chatst: chatst.o chaos.o
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 gw: gw.o chaos.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
