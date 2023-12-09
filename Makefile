@@ -4,7 +4,7 @@ all: $(ALL)
 
 CFLAGS=-Wall -W -g
 
-chatst: chatst.o chaos.o
+chatst: chatst.o chaos.o chaos.h
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 gw: gw.o chaos.o
