@@ -17,6 +17,7 @@
 
 #include <stdio.h>
 #include <errno.h>
+#include <netdb.h>
 #include <unistd.h>
 #include <string.h>
 #include <sys/un.h>
@@ -154,4 +155,147 @@ ssize_t chaos_packet_send(int fd, int opcode, const void *data, size_t len)
   }
 
   return len;
+}
+
+static struct addrinfo *lookup(int type, int flags,
+                               const char *host, const char *port)
+{
+  struct addrinfo hints;
+  struct addrinfo *addr;
+  struct addrinfo *rp;
+
+  memset(&hints, 0, sizeof hints);
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = type;
+  hints.ai_flags = flags;
+
+  if (getaddrinfo(host, port, &hints, &addr) != 0)
+    return NULL;
+
+  for (rp = addr; rp != NULL; rp = rp->ai_next) {
+    return rp;
+  }
+  return NULL;
+}
+
+int chaos_udp(const char *port)
+{
+  struct addrinfo *addr;
+  int reuse = 1;
+  int fd;
+
+  addr = lookup(SOCK_DGRAM, AI_PASSIVE, NULL, port);
+  if (addr == NULL)
+    return -1;
+  fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+  if (fd < 0)
+    return -1;
+  if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof reuse) < 0)
+    return -1;
+  if (bind(fd, addr->ai_addr, addr->ai_addrlen) < 0)
+    return -1;
+  {
+    char h[100], s[100];
+    getnameinfo(addr->ai_addr, addr->ai_addrlen, h, sizeof h, s, sizeof s, 0);
+    fprintf(stderr, "Listen to %s %s\n", h, s);
+  }
+
+  freeaddrinfo(addr);
+
+  return fd;
+}
+
+static int word(unsigned char *data)
+{
+  int x = data[0];
+  x <<= 8;
+  return x | data[1];
+}
+
+int chaos_udp_recv(int fd, struct chaos_udp_packet *packet)
+{
+  unsigned char data[MAX_PACKET + 26];
+  ssize_t n = recv(fd, data, sizeof data, 0);
+  int i;
+  if (n <= 0)
+    return n;
+  packet->opcode = data[4];
+  packet->len = word(data + 6);
+  packet->raddr = word(data + 8);
+  packet->ridx = word(data + 10);
+  packet->laddr = word(data + 12);
+  packet->lidx = word(data + 14);
+  packet->pno = word(data + 16);
+  packet->ano = word(data + 18);
+  memcpy(packet->data, data + 20, packet->len);
+  for (i = 0; i < packet->len; i+=2) {
+    packet->data[i+1] = data[i + 20];
+    packet->data[i+0] = data[i + 21];
+  }
+  return n;
+}
+
+int sum(unsigned char *data, int n)
+{
+  int sum = 0;
+
+  while (n > 1) {
+    sum += (((int)data[0]) << 8) | data[1];
+    data += 2;
+    n -= 2;
+  }
+
+  /* Add left-over byte, if any. */
+  if (n > 0)
+    sum += *data;
+
+  /* Fold 32-bit sum to 16 bits. */
+  while (sum & ~0xFFFF)
+    sum = (sum & 0xFFFF) + (sum >> 16);
+
+  return (~sum) & 0xFFFF;
+}
+
+int chaos_udp_send(int fd, const struct addrinfo *addr,
+                   struct chaos_udp_packet *packet)
+{
+  unsigned char data[MAX_PACKET + 26];
+  int checksum, len = 0, i;
+  data[len++] = 1;
+  data[len++] = 1;
+  data[len++] = 0;
+  data[len++] = 0;
+  data[len++] = packet->opcode;
+  data[len++] = 0;
+  data[len++] = (packet->len >> 8) & 0x0F;
+  data[len++] = packet->len & 0xFF;
+  data[len++] = packet->raddr >> 8;
+  data[len++] = packet->raddr & 0xFF;
+  data[len++] = packet->ridx >> 8;
+  data[len++] = packet->ridx & 0xFF;
+  data[len++] = packet->laddr >> 8;
+  data[len++] = packet->laddr & 0xFF;
+  data[len++] = packet->lidx >> 8;
+  data[len++] = packet->lidx & 0xFF;
+  data[len++] = packet->pno >> 8;
+  data[len++] = packet->pno & 0xFF;
+  data[len++] = packet->ano >> 8;
+  data[len++] = packet->ano & 0xFF;
+  for (i = 0; i < packet->len; i+=2) {
+    data[len++] = packet->data[i+1];
+    data[len++] = packet->data[i+0];
+  }
+  data[len++] = packet->raddr >> 8;
+  data[len++] = packet->raddr & 0xFF;
+  data[len++] = packet->laddr >> 8;
+  data[len++] = packet->laddr & 0xFF;
+  checksum = sum(data + 4, len - 4);
+  data[len++] = checksum >> 8;
+  data[len++] = checksum & 0xFF;
+  {
+    char h[100], s[100];
+    getnameinfo(addr->ai_addr, addr->ai_addrlen, h, sizeof h, s, sizeof s, 0);
+    fprintf(stderr, "Send to %s %s\n", h, s);
+  }
+  return sendto(fd, data, len, 0, addr->ai_addr, addr->ai_addrlen);
 }

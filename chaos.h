@@ -1,6 +1,7 @@
 #ifndef CHAOS_H
 #define CHAOS_H
 
+#include <netdb.h>
 #include <sys/types.h>
 
 enum { CHOP_RFC=1, CHOP_OPN, CHOP_CLS, CHOP_FWD, CHOP_ANS, CHOP_SNS, CHOP_STS,
@@ -12,6 +13,14 @@ enum { CHOP_RFC=1, CHOP_OPN, CHOP_CLS, CHOP_FWD, CHOP_ANS, CHOP_SNS, CHOP_STS,
 
 #define MAX_PACKET 492
 
+struct chaos_udp_packet {
+  int opcode, len;
+  int raddr, ridx;
+  int laddr, lidx;
+  int pno, ano;
+  char data[MAX_PACKET];
+};
+
 int chaos_stream(void);
 int chaos_stream_rfc(int fd, const char *host, const char *contact);
 int chaos_stream_rfc_data(int, const char *, const char *, void *, size_t);
@@ -19,5 +28,10 @@ int chaos_stream_rfc_data(int, const char *, const char *, void *, size_t);
 int chaos_packets(void);
 ssize_t chaos_packet_recv(int fd, int *opcode, void *buffer);
 ssize_t chaos_packet_send(int fd, int opcode, const void *data, size_t len);
+
+int chaos_udp(const char *port);
+int chaos_udp_recv(int fd, struct chaos_udp_packet *packet);
+int chaos_udp_send(int fd, const struct addrinfo *addr,
+                   struct chaos_udp_packet *packet);
 
 #endif /* CHAOS_H */
