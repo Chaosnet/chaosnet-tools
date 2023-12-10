@@ -126,8 +126,6 @@ static void receive_udp_packet(void)
     exit(0);
   } else {
     print_udp_packet(stdout, &incoming);
-    printf ("%06o %06o %06o\n", incoming.pno, outgoing.ano,
-            (unsigned)incoming.pno - (unsigned)outgoing.ano);
     if ((unsigned)incoming.pno - (unsigned)outgoing.ano < 0100000)
       outgoing.ano = incoming.pno;
     if (incoming.opcode == CHOP_RFC) {
@@ -234,12 +232,14 @@ static void process(void)
     return;
   }
 
-  if (pfd[0].revents)
+  if (pfd[0].revents & POLLIN) {
     read_command();
-  else if (pfd[1].revents) {
-    printf("\b");
-    receive_packet();
+    return;
   }
+
+  printf("\b");
+  if (pfd[1].revents & POLLIN)
+    receive_packet();
 }
 
 static struct addrinfo *lookup(int type, int flags,
@@ -287,10 +287,9 @@ main(int argc, char *argv[])
       send_packet = send_ncp_packet;
       break;
     case 'u':
-      char lport[100], rport[100];
-      snprintf(lport, sizeof lport, "%d", 44041);
-      snprintf(rport, sizeof rport, "%d", 44042);
-      peer = lookup(SOCK_DGRAM, 0, "localhost", rport);
+      char lport[100], host[100], rport[100];
+      sscanf(optarg, "%s %s %s", lport, host, rport);
+      peer = lookup(SOCK_DGRAM, 0, host, rport);
       sock = chaos_udp(lport);
       if (sock == -1) {
         fprintf(stderr, "Error: %s\n", strerror(errno));
