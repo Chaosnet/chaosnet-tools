@@ -76,6 +76,9 @@
 
 #define MIN(X, Y)  ((X) < (Y) ? (X) : (Y))
 
+// default window size
+static int winsize = 15;
+
 static unsigned char command_data[MAX_RECORD + 3];
 static int command_opcode;
 static int command_len;
@@ -187,8 +190,11 @@ static void packet_rfc(const unsigned char *data, int len)
   if (fork())
     serve();
   else {
+    char tbuf[128];
+    time_t now = time(NULL);
+    strftime(tbuf, sizeof(tbuf), "%T", localtime(&now));
     strncpy(peer, (const char *)data, len);
-    fprintf(log, "Open connection from %s\n", peer);
+    fprintf(log, "%s: Open connection from %s\n", tbuf, peer);
     state = state_version;
     flags = 0;
     tape = -1;
@@ -200,6 +206,10 @@ static void packet_los(const unsigned char *data, int len)
 {
   (void)data;
   (void)len;
+  char buf[128];
+  memset(buf,0,sizeof(buf));
+  memcpy(buf,data,len > sizeof(buf)-1 ? sizeof(buf)-1 : len);
+  fprintf(stderr,"Got LOS: %s\n", buf);
   fatal_error("Connection error");
 }
 
@@ -207,6 +217,10 @@ static void packet_cls(const unsigned char *data, int len)
 {
   (void)data;
   (void)len;
+  char buf[128];
+  memset(buf,0,sizeof(buf));
+  memcpy(buf,data,len > sizeof(buf)-1 ? sizeof(buf)-1 : len);
+  fprintf(stderr,"Got CLS: %s\n", buf);
   fatal_error("Connection closed");
 }
 
@@ -310,7 +324,7 @@ parse(char **p)
 {
   char *v;
   v = *p;
-  while (**p != 0 && **p != ' ')
+  while (**p > 040) 
     (*p)++;
   **p = 0;
   (*p)++;
@@ -452,11 +466,11 @@ static void cmd_read(const unsigned char *data, int len)
     was_mark = FLG_EOT;
 
   if (len == 0) {
-    fprintf(log, "Peer %s: Read continuous records\n", peer);
+    fprintf(debug, "Peer %s: Read continuous records\n", peer);
     records = -1;
   } else {
     records = number(data, len);
-    fprintf(log, "Peer %s: Read %d records\n", peer, records);
+    fprintf(debug, "Peer %s: Read %d records\n", peer, records);
   }
   flags &= ~(FLG_BOT | FLG_EOT | FLG_EOF | FLG_HER | FLG_SER);
   
@@ -466,12 +480,12 @@ static void cmd_read(const unsigned char *data, int len)
 
     n = read_record(tape, buf, sizeof buf);
     if (n == RECORD_MARK) {
-      fprintf(log, "Peer %s: Read mark\n", peer);
+      fprintf(debug, "Peer %s: Read mark\n", peer);
       flags |= FLG_EOF | was_mark;
       send_command(CMD_RFM, NULL, 0);
       return;
     } else if (n == RECORD_EOM) {
-      fprintf(log, "Peer %s: Read end of tape medium\n", peer);
+      fprintf(debug, "Peer %s: Read end of tape medium\n", peer);
       flags |= FLG_EOT;
       hard_error("End of tape medium");
       return;
@@ -493,7 +507,7 @@ static void cmd_write(const unsigned char *data, int len)
     soft_error("Mount read-only, write not allowed");
     return;
   }
-  fprintf(log, "Peer %s: Write record: %d octets\n", peer, len);
+  fprintf(debug, "Peer %s: Write record: %d octets\n", peer, len);
   flags &= ~(FLG_BOT | FLG_EOT | FLG_EOF | FLG_HER | FLG_SER);
   write_record(tape, data, len);
 }
@@ -518,7 +532,7 @@ static void cmd_space_file(const unsigned char *data, int len)
   int n = number(data, len);
 
   flags &= ~(FLG_BOT | FLG_EOT | FLG_EOF | FLG_HER | FLG_SER);
-  fprintf(log, "Peer %s: Space file: %d\n", peer, n);
+  fprintf(debug, "Peer %s: Space file: %d\n", peer, n);
   if (n == 0)
     return;
   if (n < 0) {
@@ -537,7 +551,7 @@ static void cmd_space_record(const unsigned char *data, int len)
   size_t m;
 
   flags &= ~(FLG_BOT | FLG_EOT | FLG_EOF | FLG_HER | FLG_SER);
-  fprintf(log, "Peer %s: Space record: %d\n", peer, n);
+  fprintf(debug, "Peer %s: Space record: %d\n", peer, n);
   if (n == 0)
     return;
   if (n < 0) {
@@ -546,7 +560,7 @@ static void cmd_space_record(const unsigned char *data, int len)
   }
   do
     m = read_record(tape, buf, sizeof buf);
-  while (n-- > 0 && (m & RECORD_ERR) == 0);
+  while (--n > 0 && (m & RECORD_ERR) == 0);
   if (m == RECORD_MARK)
     flags |= FLG_EOF;
   else if (m == RECORD_EOM)
@@ -561,7 +575,7 @@ static void cmd_rewind(const unsigned char *data, int len)
 
   (void)data;
   (void)len;
-  fprintf(log, "Peer %s: Rewind\n", peer);
+  fprintf(debug, "Peer %s: Rewind\n", peer);
 
   if (flags & FLG_WRITE)
     write_eot(tape);
@@ -587,7 +601,7 @@ static void cmd_write_mark(const unsigned char *data, int len)
     soft_error("Mount read-only, write not allowed");
     return;
   }
-  fprintf(log, "Peer %s: Write mark\n", peer);
+  fprintf(debug, "Peer %s: Write mark\n", peer);
   write_mark(tape);
   write_mark(tape);
   x = lseek(tape, -4, SEEK_CUR);
@@ -602,7 +616,10 @@ static void cmd_close(const unsigned char *data, int len)
     strcpy(buf, (const char *)data);
   else
     strncpy(buf, (const char *)data, len);
-  fprintf(log, "Peer %s: %s\n", peer, buf);
+  char tbuf[128];
+  time_t now = time(NULL);
+  strftime(tbuf, sizeof(tbuf), "%T", localtime(&now));
+  fprintf(log, "%s: Peer %s cmd_close: %s\n", tbuf, peer, buf);
   if (flags & FLG_NOREW) {
     ; /* Don't rewind; not applicable. */
   }
@@ -636,17 +653,20 @@ static void serve(void)
     exit(1);
   }
   state = state_ignore;
-  send_packet(CHOP_LSN, contact, strlen(contact));
+  char cwa[488];
+  sprintf(cwa, "[winsize=%d] %s", winsize, contact);
+  send_packet(CHOP_LSN, cwa, strlen(cwa));
 }  
 
 static void usage(char *s)
 {
   fprintf(stderr, "Usage: %s [-adqrv]\n", s);
-  fprintf(stderr, "  -a  Allow slashes in mount drive name.\n");
-  fprintf(stderr, "  -d  Run as daemon.\n");
-  fprintf(stderr, "  -q  Quiet operation - no logging, just errors.\n");
-  fprintf(stderr, "  -r  Only allow read-only mounts.\n");
-  fprintf(stderr, "  -v  Verbose operation - detailed logging.\n");
+  fprintf(stderr, "  -a    Allow slashes in mount drive name.\n");
+  fprintf(stderr, "  -d    Run as daemon.\n");
+  fprintf(stderr, "  -q    Quiet operation - no logging, just errors.\n");
+  fprintf(stderr, "  -r    Only allow read-only mounts.\n");
+  fprintf(stderr, "  -v    Verbose operation - detailed logging.\n");
+  fprintf(stderr, "  -w N  Set window-size N.\n");
   exit(1);
 }
 
@@ -661,7 +681,7 @@ main(int argc, char *argv[])
   log = stderr;
   debug = stderr;
 
-  while ((c = getopt(argc, argv, "adqrv")) != -1) {
+  while ((c = getopt(argc, argv, "adqrvw:")) != -1) {
     switch (c) {
     case 'a':
       allow_slash = 1;
@@ -677,6 +697,13 @@ main(int argc, char *argv[])
       break;
     case 'v':
       verbose++;
+      break;
+    case 'w':
+      winsize = atoi(optarg); 
+      if (winsize < 1) {
+	fprintf(stderr,"Too small window size %s\n", optarg);
+	usage(pname);
+      }
       break;
     default:
       fprintf(stderr, "Unknown option: %c\n", c);
