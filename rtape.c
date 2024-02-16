@@ -160,6 +160,8 @@ static FILE *log, *debug;
 static int sock = -1;
 static int tape;
 
+static char mounted_drive[16];
+
 static void dispatch(int opcode, int n, struct handler *handler,
                      const unsigned char *data, int len)
 {
@@ -208,7 +210,7 @@ static void packet_los(const unsigned char *data, int len)
   (void)len;
   char buf[128];
   memset(buf,0,sizeof(buf));
-  memcpy(buf,data,len > sizeof(buf)-1 ? sizeof(buf)-1 : len);
+  memcpy(buf,data,(u_int) len > sizeof(buf)-1 ? sizeof(buf)-1 : (u_int) len);
   fprintf(stderr,"Got LOS: %s\n", buf);
   fatal_error("Connection error");
 }
@@ -219,7 +221,7 @@ static void packet_cls(const unsigned char *data, int len)
   (void)len;
   char buf[128];
   memset(buf,0,sizeof(buf));
-  memcpy(buf,data,len > sizeof(buf)-1 ? sizeof(buf)-1 : len);
+  memcpy(buf,data,(u_int) len > sizeof(buf)-1 ? sizeof(buf)-1 : (u_int) len);
   fprintf(stderr,"Got CLS: %s\n", buf);
   fatal_error("Connection closed");
 }
@@ -379,8 +381,11 @@ static void cmd_mount(const unsigned char *data, int len)
   }
   if (tape == -1)
     hard_error("Error mounting drive");
-  else
+  else {
     flags |= FLG_MNT | FLG_BOT;
+    memset(mounted_drive, 0, sizeof(mounted_drive));
+    strncpy(mounted_drive, drive, 15);
+  }
 }
 
 static void hard_error(const char *message)
@@ -408,6 +413,12 @@ static void send_status(int id, const char *message)
   buf[2] = (id >> 8) & 0xFF;
   buf[33] = flags & 0xFF;
   buf[34] = (flags >> 8) & 0xFF;
+  memset(&buf[1+2+3+3+3+1+2+2], 0, 16);
+  if (flags & FLG_MNT) {
+    int len = strlen(mounted_drive);
+    memcpy(&buf[1+2+3+3+3+1+2+2+1], mounted_drive, len);
+    buf[1+2+3+3+3+1+2+2] = len;
+  }
   if (message) {
     fprintf(debug, "Peer %s: Send status: %s\n", peer, message);
     buf[33] |= FLG_STRG;
