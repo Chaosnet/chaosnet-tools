@@ -1,4 +1,4 @@
-ALL=gw rtape shutdown
+ALL=gw rtape recread shutdown
 
 all: $(ALL)
 
@@ -8,6 +8,9 @@ gw: gw.o chaos.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 rtape: rtape.o chaos.o tape-image.o
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+recread: recread.o tape-image.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 shutdown: shutdown.o chaos.o
