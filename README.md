@@ -63,6 +63,15 @@ REMOTE TAPE UNWOND
 _
 ```
 
+#### Companion program: `recread`
+
+Program to read records from e.g. an RTAPE tape file, and write it
+back on stdout without the record markers. Useful to get the actual
+contents of such a tape file, e.g. to use with tar, or perhaps with
+LambdaDelta.
+
+Extend this (or write another program) to do the opposite!
+
 ## `shutdown` &mdash; Request to shut down Chaosnet host.
 
 Usage: `shutdown` *host* [*data*]
