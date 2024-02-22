@@ -34,6 +34,7 @@
 #include <sys/stat.h>
 #include <sys/ioctl.h>
 #include <time.h>
+#include <sys/errno.h>
 
 #include "chaos.h"
 #include "tape-image.h"
@@ -379,9 +380,15 @@ static void cmd_mount(const unsigned char *data, int len)
     tape = rw_tape(drive);
     flags = FLG_WRITE;
   }
-  if (tape == -1)
-    hard_error("Error mounting drive");
-  else {
+  if (tape == -1) {
+    // give proper error - yes, defined constants would be good
+    char ebuf[100-1-sizeof("Error mounting drive: ")], buf[100];
+    if (strerror_r(errno, ebuf, sizeof(ebuf)) == 0)
+      sprintf(buf,"Error mounting drive: %s",ebuf);
+    else 
+      sprintf(buf,"Error mounting drive");
+    hard_error(buf);
+  } else {
     flags |= FLG_MNT | FLG_BOT;
     memset(mounted_drive, 0, sizeof(mounted_drive));
     strncpy(mounted_drive, drive, 15);
@@ -404,7 +411,8 @@ static void soft_error(const char *message)
 
 static void send_status(int id, const char *message)
 {
-  char buf[MAX_PACKET-3];
+  static char last_message[100];
+  char buf[MAX_PACKET-3], *mp = NULL;
   int n = 0;
 
   memset(buf, 0, sizeof buf);
@@ -419,13 +427,24 @@ static void send_status(int id, const char *message)
     memcpy(&buf[1+2+3+3+3+1+2+2+1], mounted_drive, len);
     buf[1+2+3+3+3+1+2+2] = len;
   }
-  if (message) {
-    fprintf(debug, "Peer %s: Send status: %s\n", peer, message);
+  // If there is a message, use it
+  if (message && message[0] != '\0') {
+    mp = message;
+    memcpy(last_message, message, MIN(strlen(message), sizeof(last_message)));
+  } else if (flags & FLG_HER)
+    // If there was no message but we had a hard error, use last message
+    mp = last_message;
+  else
+    // else forget last message
+    memset(last_message, 0, sizeof(last_message));
+  if (mp) {
+    fprintf(debug, "Peer %s: Send status: %s\n", peer, mp);
     buf[33] |= FLG_STRG;
-    n = MIN(strlen(message), sizeof buf - 36);
-    memcpy(buf+36, message, n);
+    // Again, defined constants would be nice
+    n = MIN(strlen(mp), sizeof buf - 35);
+    memcpy(buf+35, mp, n);
   }
-  send_command(CMD_STS, buf, 36 + n);
+  send_command(CMD_STS, buf, 35 + n);
 }
 
 static void cmd_probe(const unsigned char *data, int len)
