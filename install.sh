@@ -44,6 +44,11 @@ install_gw() {
     enable chaosnet-gateway
 }
 
+install_mlftp() {
+    install -d "$BIN"
+    install -m 755 mlftp "$BIN"
+}
+
 install_rtape() {
     install -d "$BIN"
     install -m 755 rtape "$BIN"

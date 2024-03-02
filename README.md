@@ -11,6 +11,21 @@ Chaosnet servers may not be hardened against malicious attacks.
 There is a unit file chaosnet-gateway.service for systemd; make sure
 to update `WorkingDirectory`.  Edit the gateway.sh script to your liking.
 
+## `mlftp` &mdash; File transfer using the MLDEV protocol.
+
+Usage: `mlftp` `-r|w` *host* *ITS-file* *local-file*
+
+To read a file from ITS, use `-r`; to write, use `-w`.  *ITS-file*
+uses the conventional free-form syntax.  The device, directory, and
+second file name are all optional.  They default to `DSK`, `.TEMP.`,
+and `>`, respectively.
+
+Since ITS file names can contain characters that confuse a typial Unix
+shell, it's best to put `--` before it and surround it with quotes.
+For example:
+
+`mlftp -w its -- "-READ- -THIS-" readme.txt`
+
 ## `rtape` &mdash; Server for RTAPE remote tape protocol.
 
 Usage: `rtape` `[-adqrv]`
