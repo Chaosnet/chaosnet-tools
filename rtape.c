@@ -441,10 +441,11 @@ static void send_status(int id, const char *message)
     fprintf(debug, "Peer %s: Send status: %s\n", peer, mp);
     buf[33] |= FLG_STRG;
     // Again, defined constants would be nice
-    n = MIN(strlen(mp), sizeof buf - 35);
-    memcpy(buf+35, mp, n);
+    n = MIN(strlen(mp), sizeof buf - 36);
+    buf[35]=n;
+    memcpy(buf+36, mp, n);
   }
-  send_command(CMD_STS, buf, 35 + n);
+  send_command(CMD_STS, buf, 36 + n);
 }
 
 static void cmd_probe(const unsigned char *data, int len)
