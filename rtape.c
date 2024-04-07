@@ -419,9 +419,9 @@ static void send_status(int id, const char *message)
   buf[0] = VERSION;
   buf[1] = id & 0xFF;
   buf[2] = (id >> 8) & 0xFF;
-  buf[33] = flags & 0xFF;
-  buf[34] = (flags >> 8) & 0xFF;
-  memset(&buf[1+2+3+3+3+1+2+2], 0, 16);
+  buf[34] = flags & 0xFF;
+  buf[35] = (flags >> 8) & 0xFF;
+  memset(&buf[1+2+3+3+3+1+2+2], 0, 17);
   if (flags & FLG_MNT) {
     int len = strlen(mounted_drive);
     memcpy(&buf[1+2+3+3+3+1+2+2+1], mounted_drive, len);
@@ -439,10 +439,9 @@ static void send_status(int id, const char *message)
     memset(last_message, 0, sizeof(last_message));
   if (mp) {
     fprintf(debug, "Peer %s: Send status: %s\n", peer, mp);
-    buf[33] |= FLG_STRG;
+    buf[34] |= FLG_STRG;
     // Again, defined constants would be nice
     n = MIN(strlen(mp), sizeof buf - 36);
-    buf[35]=n;
     memcpy(buf+36, mp, n);
   }
   send_command(CMD_STS, buf, 36 + n);
