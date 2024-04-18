@@ -41,6 +41,10 @@
 
 #define MAX_RECORD  65536  /* Max size of a tape record we handle. */
 
+#define MAX_DRIVE_LEN 16 /* Max size of drive name length */
+
+#define MAX_FILE_LEN 255 /* maximum length of tapefile name */
+
 /* From user to server. */
 #define CMD_LGI   1  /* Login */
 #define CMD_MNT   2  /* Mount */
@@ -75,6 +79,34 @@
 #define FLG_NOREW  00200000
 #define FLG_WRITE  00400000
 
+
+/* Byte offsets and field lengths for status message fields */
+#define ST_O_VERS         0   /* Version */
+#define ST_L_VERS         1
+#define ST_O_ID           1   /* ID */
+#define ST_L_ID           2
+#define ST_O_NR_BLK       3   /* No of blocks, not used yet */
+#define ST_L_NR_BLK       3
+#define ST_O_NR_BLK_SKP   6   /* No of skipped blocks, not used yet */
+#define ST_L_NR_BLK_SKP   3
+#define ST_O_NR_BLK_DISC  9   /* No of discarded blocks, not used yet */
+#define ST_L_NR_BLK_DISC  3
+#define ST_O_LAST_OP_RX   12  /* last received operation , not used yet */
+#define ST_L_LAST_OP_RX   1
+#define ST_O_DENS         13  /* density, not used yet */
+#define ST_L_DENS         2
+#define ST_O_RTY_LAST_OP  15  /* retries last operation, not used yet */
+#define ST_L_RTY_LAST_OP  2
+#define ST_O_LEN_DRV_NAM  17  /* length of drive name */
+#define ST_L_LEN_DRV_NAM  1
+#define ST_O_DRV_NAM      18  /* drive name */
+#define ST_L_DRV_NAM      16
+#define ST_O_FLG          34  /* flags */ 
+#define ST_L_FLG          2
+#define ST_O_OPT_MSG      36  /* optional message string */
+#define ST_L_OPT_MSG      0
+
+
 #define MIN(X, Y)  ((X) < (Y) ? (X) : (Y))
 
 // default window size
@@ -89,6 +121,9 @@ static int allow_slash = 0;
 static int daemonize = 0;
 static int read_only = 0;
 static char peer[MAX_PACKET];
+static char driveprefix[MAX_DRIVE_LEN+1];
+static char filemask_read[MAX_FILE_LEN+1];
+static char filemask_write[MAX_FILE_LEN+1];
 
 #define VERSION 1
 static const char *contact = "RTAPE";
@@ -161,7 +196,7 @@ static FILE *log, *debug;
 static int sock = -1;
 static int tape;
 
-static char mounted_drive[16];
+static char mounted_drive[MAX_DRIVE_LEN+1];
 
 static void dispatch(int opcode, int n, struct handler *handler,
                      const unsigned char *data, int len)
@@ -337,8 +372,10 @@ parse(char **p)
 static void cmd_mount(const unsigned char *data, int len)
 {
   char buf[MAX_PACKET];
+  char tapename_buf[MAX_FILE_LEN+1]; /* filename to be used for simulated tape*/
   char *p, *type, *reel, *drive, *size, *density;
 
+  memset(tapename_buf,0,sizeof(tapename_buf));
   strncpy(buf, (const char *)data, len);
 
   p = buf;
@@ -357,27 +394,44 @@ static void cmd_mount(const unsigned char *data, int len)
   fprintf(log, "Peer %s: Mount: type=%s, reel=%s, drive=%s, size=%s, density=%s\n",
           peer, type, reel, drive, size, density);
 
-  if (!allow_slash && strchr(drive, '/')) {
-    hard_error("Slash not allowed in drive name");
+
+  if (driveprefix[0] && (strlen(drive) < strlen(driveprefix) ||
+                           0 != strncmp(drive,driveprefix,strlen(driveprefix)))) {
+    hard_error("Unknown drive");
     return;
   }
 
+
   if (strcmp(type, "READ") == 0) {
-    tape = read_tape(drive);
+    snprintf(tapename_buf,strlen(tapename_buf)-1,filemask_read,peer,drive);
+  } else {
+    snprintf(tapename_buf,strlen(tapename_buf)-1,filemask_write,peer,drive);
+  }
+
+  fprintf(stderr,"Tape file name: [%s] [%s] [%s]\n",filemask_read, filemask_write,tapename_buf);
+
+  if (!allow_slash && strchr(tapename_buf, '/')) {
+    hard_error("Slash not allowed in tape file name");
+    return;
+  }
+
+
+  if (strcmp(type, "READ") == 0) {
+    tape = read_tape(tapename_buf);
     flags = 0;
   } else if (strcmp(type, "WRITE") == 0) {
     if (read_only) {
       hard_error("Only read-only mounts allowed");
       return;
     }
-    tape = write_tape(drive);
+    tape = write_tape(tapename_buf);
     flags = FLG_WRITE;
   } else if (strcmp(type, "BOTH") == 0) {
     if (read_only) {
       hard_error("Only read-only mounts allowed");
       return;
     }
-    tape = rw_tape(drive);
+    tape = rw_tape(tapename_buf);
     flags = FLG_WRITE;
   }
   if (tape == -1) {
@@ -391,7 +445,7 @@ static void cmd_mount(const unsigned char *data, int len)
   } else {
     flags |= FLG_MNT | FLG_BOT;
     memset(mounted_drive, 0, sizeof(mounted_drive));
-    strncpy(mounted_drive, drive, 15);
+    strncpy(mounted_drive, drive, MAX_DRIVE_LEN);
   }
 }
 
@@ -412,20 +466,22 @@ static void soft_error(const char *message)
 static void send_status(int id, const char *message)
 {
   static char last_message[100];
-  char buf[MAX_PACKET-3], *mp = NULL;
+  char buf[MAX_PACKET-3];
+  const char *mp = NULL;
   int n = 0;
 
   memset(buf, 0, sizeof buf);
-  buf[0] = VERSION;
-  buf[1] = id & 0xFF;
-  buf[2] = (id >> 8) & 0xFF;
-  buf[34] = flags & 0xFF;
-  buf[35] = (flags >> 8) & 0xFF;
-  memset(&buf[1+2+3+3+3+1+2+2], 0, 17);
+  buf[ST_O_VERS] = VERSION;
+  buf[ST_O_ID] = id & 0xFF;
+  buf[ST_O_ID+1] = (id >> 8) & 0xFF;
+  buf[ST_O_FLG] = flags & 0xFF;
+  buf[ST_O_FLG+1] = (flags >> 8) & 0xFF;
+  buf[ST_O_LEN_DRV_NAM]=0;
+  memset(&buf[ST_O_DRV_NAM], 0, ST_L_DRV_NAM);
   if (flags & FLG_MNT) {
     int len = strlen(mounted_drive);
-    memcpy(&buf[1+2+3+3+3+1+2+2+1], mounted_drive, len);
-    buf[1+2+3+3+3+1+2+2] = len;
+    memcpy(&buf[ST_O_DRV_NAM], mounted_drive, ST_L_DRV_NAM);
+    buf[ST_O_LEN_DRV_NAM] = len;
   }
   // If there is a message, use it
   if (message && message[0] != '\0') {
@@ -439,12 +495,11 @@ static void send_status(int id, const char *message)
     memset(last_message, 0, sizeof(last_message));
   if (mp) {
     fprintf(debug, "Peer %s: Send status: %s\n", peer, mp);
-    buf[34] |= FLG_STRG;
-    // Again, defined constants would be nice
-    n = MIN(strlen(mp), sizeof buf - 36);
-    memcpy(buf+36, mp, n);
+    buf[ST_O_FLG] |= FLG_STRG;
+    n = MIN(strlen(mp), sizeof buf - ST_O_OPT_MSG);
+    memcpy(buf+ST_O_OPT_MSG, mp, n);
   }
-  send_command(CMD_STS, buf, 36 + n);
+  send_command(CMD_STS, buf, ST_O_OPT_MSG + n);
 }
 
 static void cmd_probe(const unsigned char *data, int len)
@@ -686,17 +741,38 @@ static void serve(void)
   char cwa[488];
   sprintf(cwa, "[winsize=%d] %s", winsize, contact);
   send_packet(CHOP_LSN, cwa, strlen(cwa));
-}  
+}
 
 static void usage(char *s)
 {
   fprintf(stderr, "Usage: %s [-adqrv]\n", s);
-  fprintf(stderr, "  -a    Allow slashes in mount drive name.\n");
-  fprintf(stderr, "  -d    Run as daemon.\n");
-  fprintf(stderr, "  -q    Quiet operation - no logging, just errors.\n");
-  fprintf(stderr, "  -r    Only allow read-only mounts.\n");
-  fprintf(stderr, "  -v    Verbose operation - detailed logging.\n");
-  fprintf(stderr, "  -w N  Set window-size N.\n");
+  fprintf(stderr, "  -a     Allow slashes in mount drive name.\n");
+  fprintf(stderr, "  -d     Run as daemon.\n");
+  fprintf(stderr, "  -p pre Enforce drive name starts with prefix [pre]\n");
+  fprintf(stderr, "  -q     Quiet operation - no logging, just errors.\n");
+  fprintf(stderr, "  -r     Only allow read-only mounts.\n");
+  fprintf(stderr, "  -v     Verbose operation - detailed logging.\n");
+  fprintf(stderr, "  -w N   Set window-size N.\n\n");
+  fprintf(stderr, "  Adv. options to control tape filename generation:\n");
+  fprintf(stderr, "  -R fs  for READ(only) mounts, use fs as printf-format\n");
+  fprintf(stderr, "	    string to generate tape filename (see below)\n");
+  fprintf(stderr, "  -W fs  for WRITE or BOTH mounts, use fs as printf-format\n");
+  fprintf(stderr, "         string to generate tape filename (see below)\n\n");
+  fprintf(stderr, "         Tape filename will be genrated by :\n");
+  fprintf(stderr, "              sprintf(filename,fs,peer,drive)\n");
+  fprintf(stderr, "  Examples:\n");
+  fprintf(stderr, "           - Default is: \"%%0.s%%s\" : use drive name as tape filename\n");
+  fprintf(stderr, "           - \"%%.0s%%s.tap\" : add '.tap' extension\n");
+  fprintf(stderr, "           - \"%%s-%%s.tap\" : use [peer]-[drive].tap as tape filename\n");
+  fprintf(stderr, "             e.g. mounting drive 'BAK001' from peer 0177002 \n");
+  fprintf(stderr, "                  ==> tapename 0177002-BAK001.tap\n");
+  fprintf(stderr, "           Using different options for READ and WRITE,BOTH mounts:\n");
+  fprintf(stderr, "           -W %%s-%%s.tap -R %%.0s%%s.tap\n");
+  fprintf(stderr, "            ==> a tape  can only be overwritten by the host that wrote it\n");
+  fprintf(stderr, "                but you can mount any host's tape in READ mode by prefixing the\n");
+  fprintf(stderr, "                drive with the host address e.g. drive = \"0177002-BAK\"\n");
+  fprintf(stderr, "                in the example above\n");
+
   exit(1);
 }
 
@@ -711,7 +787,11 @@ main(int argc, char *argv[])
   log = stderr;
   debug = stderr;
 
-  while ((c = getopt(argc, argv, "adqrvw:")) != -1) {
+  /* setting defaults */
+  strcpy(filemask_read,"%.0s%s");
+  strcpy(filemask_write,"%.0s%s");
+
+  while ((c = getopt(argc, argv, "adfp:qrR:vw:W:")) != -1) {
     switch (c) {
     case 'a':
       allow_slash = 1;
@@ -719,11 +799,19 @@ main(int argc, char *argv[])
     case 'd':
       daemonize = 1;
       break;
+    case 'p':
+      driveprefix[MAX_DRIVE_LEN]=0;
+      strncpy(driveprefix,optarg,MAX_DRIVE_LEN);
+      break;
     case 'q':
       quiet = 1;
       break;
     case 'r':
       read_only = 1;
+      break;
+    case 'R':
+      filemask_read[MAX_FILE_LEN]=0;
+      strncpy(filemask_read,optarg,MAX_FILE_LEN);
       break;
     case 'v':
       verbose++;
@@ -734,6 +822,10 @@ main(int argc, char *argv[])
 	fprintf(stderr,"Too small window size %s\n", optarg);
 	usage(pname);
       }
+      break;
+    case 'W':
+      filemask_write[MAX_FILE_LEN]=0;
+      strncpy(filemask_write,optarg,MAX_FILE_LEN);
       break;
     default:
       fprintf(stderr, "Unknown option: %c\n", c);
