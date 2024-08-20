@@ -41,6 +41,10 @@
 
 #define MAX_RECORD  65536  /* Max size of a tape record we handle. */
 
+#define MAX_DRIVE_LEN 16 /* Max size of drive name length */
+
+#define MAX_FILE_LEN 255 /* maximum length of tapefile name */
+
 /* From user to server. */
 #define CMD_LGI   1  /* Login */
 #define CMD_MNT   2  /* Mount */
@@ -74,6 +78,34 @@
 /* Not part of status response. */
 #define FLG_NOREW  00200000
 #define FLG_WRITE  00400000
+
+
+/* Byte offsets and field lengths for status message fields */
+#define ST_O_VERS         0   /* Version */
+#define ST_L_VERS         1
+#define ST_O_ID           1   /* ID */
+#define ST_L_ID           2
+#define ST_O_NR_BLK       3   /* No of blocks, not used yet */
+#define ST_L_NR_BLK       3
+#define ST_O_NR_BLK_SKP   6   /* No of skipped blocks, not used yet */
+#define ST_L_NR_BLK_SKP   3
+#define ST_O_NR_BLK_DISC  9   /* No of discarded blocks, not used yet */
+#define ST_L_NR_BLK_DISC  3
+#define ST_O_LAST_OP_RX   12  /* last received operation , not used yet */
+#define ST_L_LAST_OP_RX   1
+#define ST_O_DENS         13  /* density, not used yet */
+#define ST_L_DENS         2
+#define ST_O_RTY_LAST_OP  15  /* retries last operation, not used yet */
+#define ST_L_RTY_LAST_OP  2
+#define ST_O_LEN_DRV_NAM  17  /* length of drive name */
+#define ST_L_LEN_DRV_NAM  1
+#define ST_O_DRV_NAM      18  /* drive name */
+#define ST_L_DRV_NAM      16
+#define ST_O_FLG          34  /* flags */ 
+#define ST_L_FLG          2
+#define ST_O_OPT_MSG      36  /* optional message string */
+#define ST_L_OPT_MSG      0
+
 
 #define MIN(X, Y)  ((X) < (Y) ? (X) : (Y))
 
@@ -161,7 +193,7 @@ static FILE *log, *debug;
 static int sock = -1;
 static int tape;
 
-static char mounted_drive[16];
+static char mounted_drive[MAX_DRIVE_LEN+1];
 
 static void dispatch(int opcode, int n, struct handler *handler,
                      const unsigned char *data, int len)
@@ -391,7 +423,7 @@ static void cmd_mount(const unsigned char *data, int len)
   } else {
     flags |= FLG_MNT | FLG_BOT;
     memset(mounted_drive, 0, sizeof(mounted_drive));
-    strncpy(mounted_drive, drive, 15);
+    strncpy(mounted_drive, drive, MAX_DRIVE_LEN);
   }
 }
 
@@ -412,20 +444,22 @@ static void soft_error(const char *message)
 static void send_status(int id, const char *message)
 {
   static char last_message[100];
-  char buf[MAX_PACKET-3], *mp = NULL;
+  char buf[MAX_PACKET-3];
+  const char *mp = NULL;
   int n = 0;
 
   memset(buf, 0, sizeof buf);
-  buf[0] = VERSION;
-  buf[1] = id & 0xFF;
-  buf[2] = (id >> 8) & 0xFF;
-  buf[33] = flags & 0xFF;
-  buf[34] = (flags >> 8) & 0xFF;
-  memset(&buf[1+2+3+3+3+1+2+2], 0, 16);
+  buf[ST_O_VERS] = VERSION;
+  buf[ST_O_ID] = id & 0xFF;
+  buf[ST_O_ID+1] = (id >> 8) & 0xFF;
+  buf[ST_O_FLG] = flags & 0xFF;
+  buf[ST_O_FLG+1] = (flags >> 8) & 0xFF;
+  buf[ST_O_LEN_DRV_NAM]=0;
+  memset(&buf[ST_O_DRV_NAM], 0, ST_L_DRV_NAM);
   if (flags & FLG_MNT) {
     int len = strlen(mounted_drive);
-    memcpy(&buf[1+2+3+3+3+1+2+2+1], mounted_drive, len);
-    buf[1+2+3+3+3+1+2+2] = len;
+    memcpy(&buf[ST_O_DRV_NAM], mounted_drive, ST_L_DRV_NAM);
+    buf[ST_O_LEN_DRV_NAM] = len;
   }
   // If there is a message, use it
   if (message && message[0] != '\0') {
@@ -439,12 +473,11 @@ static void send_status(int id, const char *message)
     memset(last_message, 0, sizeof(last_message));
   if (mp) {
     fprintf(debug, "Peer %s: Send status: %s\n", peer, mp);
-    buf[33] |= FLG_STRG;
-    // Again, defined constants would be nice
-    n = MIN(strlen(mp), sizeof buf - 35);
-    memcpy(buf+35, mp, n);
+    buf[ST_O_FLG] |= FLG_STRG;
+    n = MIN(strlen(mp), sizeof buf - ST_O_OPT_MSG);
+    memcpy(buf+ST_O_OPT_MSG, mp, n);
   }
-  send_command(CMD_STS, buf, 35 + n);
+  send_command(CMD_STS, buf, ST_O_OPT_MSG + n);
 }
 
 static void cmd_probe(const unsigned char *data, int len)
