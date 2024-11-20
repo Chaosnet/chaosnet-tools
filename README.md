@@ -88,6 +88,18 @@ REMOTE TAPE UNWOND
 _
 ```
 
+## `senver` &mdash; Server for SEND protocol.
+
+Usage: `senver`
+
+Accepts messages from the network.  Delivery is handled by a
+subprocess; the program in the environment variable `QSEND` is run.
+The recipient user is passed as its first argument, and the Chaosnet
+source host as the second argument.  The message content is passed to
+stdin.  If `QSEND` is not set, the default is to run `qsend-inoming`.
+The user *must* either set `QSEND`, or ensure `qsend-incoming` is on
+the PATH.
+
 ## `shutdown` &mdash; Request to shut down Chaosnet host.
 
 Usage: `shutdown` *host* [*data*]

@@ -1,0 +1,25 @@
+#!/bin/sh
+
+# This is a sample script to handle incoming Chaosnet "send" messages.
+# The recipient user is passed on the command line as the first
+# argument, and the Chaosnet node is the second argument.  The message
+# body is taken from standard in.
+
+# This script can be customized, or the environment variable QSEND can
+# be changed to have the senver sever run some other program.
+
+what="Incoming message for $1, from Chaosnet host $2"
+message="`cat`"
+
+notifyp() {
+    # Check whether to send a D-Bus desktop notification.
+    test -n "$DBUS_SESSION_BUS_ADDRESS" &&
+      command -v notify-send >/dev/null
+}
+
+if notifyp; then
+    notify-send "$what" "$message"
+else
+    echo "$what"
+    echo "$message"
+fi
