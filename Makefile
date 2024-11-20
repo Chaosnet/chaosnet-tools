@@ -1,4 +1,4 @@
-ALL=gw qsend rtape shutdown mlftp
+ALL=gw qsend rtape senver shutdown mlftp
 
 MLDEV=mldev/mldev.o mldev/protoc.o mldev/io-chaos.o
 LIBWORD=dasm/libword/libword
@@ -17,6 +17,9 @@ qsend: qsend.o chaos.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 rtape: rtape.o chaos.o tape-image.o
+	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
+
+senver: senver.o chaos.o
 	$(CC) $(LDFLAGS) -o $@ $^ $(LDLIBS)
 
 shutdown: shutdown.o chaos.o
@@ -40,5 +43,6 @@ chaos.o:: chaos.h
 mlftp.o:: chaos.h mldev/mldev.h mldev/protoc.h mldev/io.h $(LIBWORD).h
 qsend.o:: chaos.h
 rtape.o:: chaos.h tape-image.h
+senver.o:: chaos.h
 shutdown.o:: chaos.h
 tape-image.o:: tape-image.h
