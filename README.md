@@ -26,6 +26,16 @@ For example:
 
 `mlftp -w its -- "-READ- -THIS-" readme.txt`
 
+## `qsend` &mdash; Send a message.
+
+Usage: `qsend` `user@host` [ `sender@host` [ `time` ]]
+
+Sends a message to *user* at *host.  The message body is taken from
+standard input.  Optionally, the sender can be specified; the defaults
+are taken from the `USER` environment variable and the output of
+`hostname`.  The time of the message can also be specified, or else
+the current time will be used.
+
 ## `rtape` &mdash; Server for RTAPE remote tape protocol.
 
 Usage: `rtape` `[-adqrv]`
